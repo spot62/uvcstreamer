@@ -50,14 +50,14 @@
 
 struct input_uvc_config input_uvc_cfg = {
     .dev = "/dev/video0",
-    .width = 640,
-    .height = 480,
-    .fps = 15,
+    .width = 640, //1280, //320,
+    .height = 480, //960, //240,
+    .fps = 25,//1,
     .format = V4L2_PIX_FMT_MJPEG,
     .dynctrls = true,
     .gquality = 80,
     .minimum_size = 0,
-    .stop_camera = 1
+    .stop_camera = 0
 };
 
 /* private functions and variables to this plugin */
@@ -101,11 +101,11 @@ int input_uvc_init(void)
 
     /* display the parsed values */
     IPRINT("Using V4L2 device.: %s\n", input_uvc_cfg.dev);
-    IPRINT("Desired Resolution: %i x %i\n", input_uvc_cfg.width, input_uvc_cfg.height);
-    IPRINT("Frames Per Second.: %i\n", input_uvc_cfg.fps);
+    IPRINT("Desired Resolution: %lu x %lu\n", input_uvc_cfg.width, input_uvc_cfg.height);
+    IPRINT("Frames Per Second.: %lu\n", input_uvc_cfg.fps);
     IPRINT("Format............: %s\n", (input_uvc_cfg.format == V4L2_PIX_FMT_YUYV) ? "YUV" : "MJPEG");
     if(input_uvc_cfg.format == V4L2_PIX_FMT_YUYV)
-        IPRINT("JPEG Quality......: %d\n", input_uvc_cfg.gquality);
+        IPRINT("JPEG Quality......: %lu\n", input_uvc_cfg.gquality);
     IPRINT("Stop camera feat..: %s\n", (!input_uvc_cfg.stop_camera) ? "disabled" : "enabled");
     IPRINT("Dynctrls feat.....: %s\n", (!input_uvc_cfg.dynctrls) ? "disabled" : "enabled");
 
@@ -186,7 +186,6 @@ void *cam_thread(void *arg)
             usleep(1); // maybe not the best way so FIXME
         }
 
-
         if(input_uvc_cfg.stop_camera == 1)
         {
 			/* check active outputs */
@@ -208,7 +207,7 @@ void *cam_thread(void *arg)
             exit(EXIT_FAILURE);
         }
 
-        DBG("received frame of size: %d from plugin: %d\n", pcontext->videoIn->buf.bytesused, pcontext->id);
+        DBG("received frame of size: %lu from plugin: %d\n", pcontext->videoIn->framebuffer_sz, pcontext->id);
 
         /*
          * Workaround for broken, corrupted frames:
@@ -217,7 +216,7 @@ void *cam_thread(void *arg)
          * For example a VGA (640x480) webcam picture is normally >= 8kByte large,
          * corrupted frames are smaller.
          */
-        if(pcontext->videoIn->buf.bytesused < input_uvc_cfg.minimum_size) {
+        if(pcontext->videoIn->framebuffer_sz < input_uvc_cfg.minimum_size) {
             DBG("dropping too small frame, assuming it as broken\n");
             continue;
         }
@@ -233,10 +232,10 @@ void *cam_thread(void *arg)
          */
         if(pcontext->videoIn->formatIn == V4L2_PIX_FMT_YUYV) {
             DBG("compressing frame from input: %d\n", (int)pcontext->id);
-            pglobal->in[pcontext->id].size = compress_yuyv_to_jpeg(pcontext->videoIn, pglobal->in[pcontext->id].buf, pcontext->videoIn->framesizeIn, input_uvc_cfg.gquality);
+            pglobal->in[pcontext->id].size = compress_yuyv_to_jpeg(pcontext->videoIn, pglobal->in[pcontext->id].buf, pcontext->videoIn->framebuffer_sz, input_uvc_cfg.gquality);
         } else {
             DBG("copying frame from input: %d\n", (int)pcontext->id);
-            pglobal->in[pcontext->id].size = memcpy_picture(pglobal->in[pcontext->id].buf, pcontext->videoIn->tmpbuffer, pcontext->videoIn->buf.bytesused);
+            pglobal->in[pcontext->id].size = memcpy_picture(pglobal->in[pcontext->id].buf, pcontext->videoIn->framebuffer, pcontext->videoIn->framebuffer_sz);
         }
 
 #if 0
@@ -248,7 +247,7 @@ void *cam_thread(void *arg)
 #endif
 
         /* copy this frame's timestamp to user space */
-        pglobal->in[pcontext->id].timestamp = pcontext->videoIn->buf.timestamp;
+        pglobal->in[pcontext->id].timestamp = pcontext->videoIn->timestamp;
 
         /* signal fresh_frame */
         pthread_cond_broadcast(&pglobal->in[pcontext->id].db_update);
@@ -289,7 +288,6 @@ void cam_cleanup(void *arg)
     IPRINT("cleaning up ressources allocated by input thread\n");
 
     close_v4l2(pcontext->videoIn);
-    if(pcontext->videoIn->tmpbuffer != NULL) free(pcontext->videoIn->tmpbuffer);
     if(pcontext->videoIn != NULL) free(pcontext->videoIn);
     if(pglobal->in[pcontext->id].buf != NULL)
         free(pglobal->in[pcontext->id].buf);

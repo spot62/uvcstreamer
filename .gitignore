@@ -12,6 +12,4 @@
 *.dylib
 
 # Executables
-*.exe
-*.out
-*.app
+uvcstreamer

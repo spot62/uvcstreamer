@@ -40,6 +40,7 @@
 #include <linux/version.h>
 #include <getopt.h>
 
+#define DEBUG
 #include "uvcstreamer.h"
 #include "utils.h"
 #include "httpd.h"
@@ -875,7 +876,7 @@ void *client_thread(void *arg)
         }
 
         pb += strlen("GET /");
-        len = MIN(MAX(strspn(pb, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-1234567890"), 0), 100);
+        len = MIN(MAX(strspn(pb, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._/-1234567890"), 0), 100);
         req.parameter = malloc(len + 1);
         if(req.parameter == NULL) {
         	DBG("req.parameter is NULL");

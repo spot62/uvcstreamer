@@ -81,8 +81,9 @@ struct vdIn {
     struct v4l2_buffer buf;
     struct v4l2_requestbuffers rb;
     void *mem[NB_BUFFER];
-    unsigned char *tmpbuffer;
     unsigned char *framebuffer;
+    size_t framebuffer_sz;
+    struct timeval timestamp;
     streaming_state streamingState;
     int grabmethod;
     int width;
@@ -92,21 +93,6 @@ struct vdIn {
     int formatOut;
     int framesizeIn;
     int signalquit;
-    int toggleAvi;
-    int getPict;
-    int rawFrameCapture;
-    /* raw frame capture */
-    unsigned int fileCounter;
-    /* raw frame stream capture */
-    unsigned int rfsFramesWritten;
-    unsigned int rfsBytesWritten;
-    /* raw stream capture */
-    FILE *captureFile;
-    unsigned int framesWritten;
-    unsigned int bytesWritten;
-    int framecount;
-    int recordstart;
-    int recordtime;
 };
 
 /* context of each camera thread */

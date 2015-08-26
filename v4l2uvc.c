@@ -59,25 +59,29 @@ int init_videoIn(struct vdIn *vd, char *device, int width,
 {
     if(vd == NULL || device == NULL)
         return -1;
+
     if(width == 0 || height == 0)
         return -1;
+
     if(grabmethod < 0 || grabmethod > 1)
         grabmethod = 1;     //mmap by default;
+
     vd->videodevice = NULL;
     vd->status = NULL;
     vd->pictName = NULL;
     vd->videodevice = (char *) calloc(1, 16 * sizeof(char));
     vd->status = (char *) calloc(1, 100 * sizeof(char));
     vd->pictName = (char *) calloc(1, 80 * sizeof(char));
+
     snprintf(vd->videodevice, 12, "%s", device);
-    vd->toggleAvi = 0;
-    vd->getPict = 0;
+
     vd->signalquit = 1;
     vd->width = width;
     vd->height = height;
     vd->fps = fps;
     vd->formatIn = format;
     vd->grabmethod = grabmethod;
+
     if(init_v4l2(vd) < 0) {
         fprintf(stderr, " Init v4L2 failed !! exit fatal \n");
         goto error;;
@@ -164,15 +168,12 @@ int init_videoIn(struct vdIn *vd, char *device, int width,
     vd->framesizeIn = (vd->width * vd->height << 1);
     switch(vd->formatIn) {
     case V4L2_PIX_FMT_MJPEG:
-        vd->tmpbuffer = (unsigned char *) calloc(1, (size_t) vd->framesizeIn);
-        if(!vd->tmpbuffer)
-            goto error;
-        vd->framebuffer =
-            (unsigned char *) calloc(1, (size_t) vd->width * (vd->height + 8) * 2);
-        break;
     case V4L2_PIX_FMT_YUYV:
         vd->framebuffer =
             (unsigned char *) calloc(1, (size_t) vd->framesizeIn);
+        vd->framebuffer_sz=0;
+        vd->timestamp.tv_sec = 0;
+        vd->timestamp.tv_usec = 0;
         break;
     default:
         fprintf(stderr, " should never arrive exit fatal !!\n");
@@ -420,6 +421,8 @@ int uvcGrab(struct vdIn *vd)
     int ret;
 	int i;
 
+	vd->framebuffer_sz = 0;
+
     if(vd->streamingState == STREAMING_OFF) {
 		for(i = 0; i < NB_BUFFER; ++i) {
 			memset(&vd->buf, 0, sizeof(struct v4l2_buffer));
@@ -450,28 +453,22 @@ int uvcGrab(struct vdIn *vd)
     case V4L2_PIX_FMT_MJPEG:
         if(vd->buf.bytesused <= HEADERFRAME1) {
             /* Prevent crash on empty image */
+        	vd->framebuffer = 0;
             fprintf(stderr, "Ignoring empty buffer ...\n");
             return 0;
         }
 
-        /* memcpy(vd->tmpbuffer, vd->mem[vd->buf.index], vd->buf.bytesused);
-
-        memcpy (vd->tmpbuffer, vd->mem[vd->buf.index], HEADERFRAME1);
-        memcpy (vd->tmpbuffer + HEADERFRAME1, dht_data, sizeof(dht_data));
-        memcpy (vd->tmpbuffer + HEADERFRAME1 + sizeof(dht_data), vd->mem[vd->buf.index] + HEADERFRAME1, (vd->buf.bytesused - HEADERFRAME1));
-        */
-
-        memcpy(vd->tmpbuffer, vd->mem[vd->buf.index], vd->buf.bytesused);
+        vd->framebuffer_sz = vd->buf.bytesused;
+        memcpy(vd->framebuffer, vd->mem[vd->buf.index], vd->framebuffer_sz);
 
         if(debug)
-            fprintf(stderr, "bytes in used %d \n", vd->buf.bytesused);
+            fprintf(stderr, "bytes in used %lu \n", vd->framebuffer_sz);
+
         break;
 
     case V4L2_PIX_FMT_YUYV:
-        if(vd->buf.bytesused > vd->framesizeIn)
-            memcpy(vd->framebuffer, vd->mem[vd->buf.index], (size_t) vd->framesizeIn);
-        else
-            memcpy(vd->framebuffer, vd->mem[vd->buf.index], (size_t) vd->buf.bytesused);
+    	vd->framebuffer_sz = (size_t)((vd->buf.bytesused > vd->framesizeIn)? vd->framesizeIn : vd->buf.bytesused);
+        memcpy(vd->framebuffer, vd->mem[vd->buf.index], vd->framebuffer_sz );
         break;
 
     default:
@@ -479,7 +476,24 @@ int uvcGrab(struct vdIn *vd)
         break;
     }
 
+#if 0
+    {
+    	static long msec_max=0;
+    	long msec;
+		msec=(vd->buf.timestamp.tv_sec-vd->timestamp.tv_sec)*1000;
+		msec+=(vd->buf.timestamp.tv_usec-vd->timestamp.tv_usec)/1000;
+
+    	vd->timestamp.tv_sec = vd->buf.timestamp.tv_sec;
+    	vd->timestamp.tv_usec = vd->buf.timestamp.tv_usec;
+
+    	if((msec > msec_max) && (msec < 60*1000)) msec_max = msec;
+
+    	fprintf(stderr, "timestamp: %lu(%lu)\n", msec, msec_max);
+    }
+#endif
+
     ret = xioctl(vd->fd, VIDIOC_QBUF, &vd->buf);
+
     if(ret < 0) {
         perror("Unable to requeue buffer");
         goto err;
@@ -504,9 +518,6 @@ int close_v4l2(struct vdIn *vd)
 {
     if(vd->streamingState == STREAMING_ON)
         video_disable(vd, STREAMING_OFF);
-    if(vd->tmpbuffer)
-        free(vd->tmpbuffer);
-    vd->tmpbuffer = NULL;
     free(vd->framebuffer);
     vd->framebuffer = NULL;
     free(vd->videodevice);
